@@ -1,7 +1,9 @@
-﻿using BookingSystem.Controllers;
+﻿using BookingSystem.Constants;
+using BookingSystem.Controllers;
 using BookingSystem.Enums;
 using BookingSystem.IServices;
 using BookingSystem.Models;
+using BookingSystem.Strategy;
 using System.Collections.Concurrent;
 using System.IO.IsolatedStorage;
 using System.Text.Json;
@@ -14,52 +16,34 @@ namespace BookingSystem.Services
         private readonly HttpClient _httpClient = new HttpClient();
         private static DateTime today = DateTime.Today;
         DateTime futureDate = today.AddDays(45);
-        Random random = new Random();
-        //private readonly HttpClient _httpClient;
-        //private readonly BookController _bookController;
-        //private readonly SearchController _searchController;
+        
 
 
-        // ADD FACTORY FOR HOTELONLY, LASTMINUTEHOTEL AND FLIGHTANDHOTELSEARCH 
+        // ADD STRATEGY FOR HOTELONLY, LASTMINUTEHOTEL AND FLIGHTANDHOTELSEARCH 
         public async Task<SearchRes> Search(SearchReq req)
         {
             var searchRes = new SearchRes { Options = new List<Option>() };
             bool isWithin45Days = req.FromDate >= today && req.FromDate <= futureDate;
+            var hotelResponse = await _httpClient.GetStringAsync($"{urls.HotelSearchUrl}?destinationCode={req.Destination}");
 
-            var hotelResponse = await _httpClient.GetStringAsync($"https://tripx-test-functions.azurewebsites.net/api/SearchHotels?destinationCode={req.Destination}");
             var hotels = JsonSerializer.Deserialize<List<OptionHotelOnly>>(hotelResponse);
 
-            if(isWithin45Days && hotels != null)
-            {
-                // Last minute search - more expensive hotel price.
-                foreach (var hotel in hotels)
-                {
-                    hotel.price = (random.Next(200, 1001)).ToString() + " $";
-                }
-
-                searchRes.Options.AddRange(hotels);
-                return searchRes;
-            }
-            
-            // Hotel Only Search
             if (hotels != null)
             {
-                foreach (var hotel in hotels)
+                ISearchStrategy searchStrategy;
+
+                if (isWithin45Days)
                 {
-                    hotel.price = (random.Next(20, 501)).ToString() + " $";
+                    searchStrategy = new LastMinuteSearch();
+                }
+                else
+                {
+                    searchStrategy = new HotelSearch(); 
                 }
 
-                searchRes.Options.AddRange(hotels);
-            }
-
-            // Hotel and Flight Search
-            if(!string.IsNullOrEmpty(req.DepartureAirport))
-            {
-                var hotelAndFlightResponse = await _httpClient.GetStringAsync($"https://tripx-test-functions.azurewebsites.net/api/SearchFlights?departureAirport={req.DepartureAirport}&arrivalAirport={req.Destination}");
-                var flights = JsonSerializer.Deserialize<List<OptionHotelAndFlight>>(hotelAndFlightResponse);
-                if(flights != null)
+                if (searchStrategy != null)
                 {
-                    searchRes.Options.AddRange(flights);
+                    await searchStrategy.execSearchType(hotels, searchRes, req, _httpClient);
                 }
             }
 
@@ -72,15 +56,15 @@ namespace BookingSystem.Services
             var sleepTime = new Random().Next(30, 60);
             var bookTime = DateTime.Now;
 
-            BookRes newBooking = new BookRes (bookingCode, bookTime);
+            BookRes newBooking = new BookRes(bookingCode, bookTime);
 
-            _bookings[bookingCode] = (newBooking,  sleepTime, DateTime.Now);
+            _bookings[bookingCode] = (newBooking, sleepTime, DateTime.Now);
 
             // simulating small connection lag
             await Task.Run(async () =>
             {
                 await Task.Delay(sleepTime * 60);
-                 _bookings[bookingCode] = (newBooking, sleepTime, DateTime.Now.AddSeconds(sleepTime));
+                _bookings[bookingCode] = (newBooking, sleepTime, DateTime.Now.AddSeconds(sleepTime));
             });
 
             return newBooking;
@@ -91,7 +75,7 @@ namespace BookingSystem.Services
             if (_bookings.TryGetValue(req.BookingCode, out var data))
             {
                 var bookingTimeSpent = (DateTime.Now - data.BookingTime).TotalSeconds;
-              
+
                 if (bookingTimeSpent >= data.SleepTime)
                 {
                     return new CheckStatusRes { Status = BookingStatusEnum.Success };
@@ -100,5 +84,6 @@ namespace BookingSystem.Services
             }
             return new CheckStatusRes { Status = BookingStatusEnum.Failed };
         }
+
     }
 }
