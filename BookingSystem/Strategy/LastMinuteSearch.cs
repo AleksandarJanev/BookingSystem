@@ -13,7 +13,7 @@ namespace BookingSystem.Strategy
 
             if (!string.IsNullOrEmpty(req.DepartureAirport))
             {
-                await FlightSearch.hotelAndFlightSearch(searchRes, httpClient, req);
+                await FlightSearch.flightSearch(searchRes, httpClient, req);
             }
         }
 

@@ -1,6 +1,7 @@
 ﻿using BookingSystem.Constants;
 using BookingSystem.Controllers;
 using BookingSystem.Enums;
+using BookingSystem.Factory;
 using BookingSystem.IServices;
 using BookingSystem.Models;
 using BookingSystem.Strategy;
@@ -17,9 +18,6 @@ namespace BookingSystem.Services
         private static DateTime today = DateTime.Today;
         DateTime futureDate = today.AddDays(45);
         
-
-
-        // ADD STRATEGY FOR HOTELONLY, LASTMINUTEHOTEL AND FLIGHTANDHOTELSEARCH 
         public async Task<SearchRes> Search(SearchReq req)
         {
             var searchRes = new SearchRes { Options = new List<Option>() };
@@ -30,16 +28,7 @@ namespace BookingSystem.Services
 
             if (hotels != null)
             {
-                ISearchStrategy searchStrategy;
-
-                if (isWithin45Days)
-                {
-                    searchStrategy = new LastMinuteSearch();
-                }
-                else
-                {
-                    searchStrategy = new HotelSearch(); 
-                }
+                ISearchStrategy searchStrategy = isWithin45Days ? SearchFactory.GetSearch("lastminute", true) : SearchFactory.GetSearch("hotelonly", false);
 
                 if (searchStrategy != null)
                 {
