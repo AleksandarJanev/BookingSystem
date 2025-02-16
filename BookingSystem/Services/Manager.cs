@@ -13,7 +13,7 @@ namespace BookingSystem.Services
 {
     public class Manager : IManager
     {
-        private static readonly ConcurrentDictionary<string, (BookRes Booking, int SleepTime, DateTime BookingTime)> _bookings = new();
+        private static readonly ConcurrentDictionary<string, (BookRes Booking, int SleepTime, DateTime BookingTime, bool isWithin45Days)> _bookings = new();
         private readonly HttpClient _httpClient = new HttpClient();
         private static DateTime today = DateTime.Today;
         DateTime futureDate = today.AddDays(45);
@@ -44,16 +44,16 @@ namespace BookingSystem.Services
             var bookingCode = Guid.NewGuid().ToString("N").Substring(0, 6);
             var sleepTime = new Random().Next(30, 60);
             var bookTime = DateTime.Now;
-
+            bool isWithin45Days = req.SearchReq.FromDate >= today && req.SearchReq.FromDate <= futureDate;
             BookRes newBooking = new BookRes(bookingCode, bookTime);
 
-            _bookings[bookingCode] = (newBooking, sleepTime, DateTime.Now);
+            _bookings[bookingCode] = (newBooking, sleepTime, DateTime.Now, isWithin45Days);
 
             // simulating small connection lag
             await Task.Run(async () =>
             {
                 await Task.Delay(sleepTime * 60);
-                _bookings[bookingCode] = (newBooking, sleepTime, DateTime.Now.AddSeconds(sleepTime));
+                _bookings[bookingCode] = (newBooking, sleepTime, DateTime.Now.AddSeconds(sleepTime), isWithin45Days);
             });
 
             return newBooking;
@@ -67,7 +67,14 @@ namespace BookingSystem.Services
 
                 if (bookingTimeSpent >= data.SleepTime)
                 {
-                    return new CheckStatusRes { Status = BookingStatusEnum.Success };
+                    if(data.isWithin45Days)
+                    {
+                        return new CheckStatusRes { Status = BookingStatusEnum.Failed };
+                    }
+                    else
+                    {
+                        return new CheckStatusRes { Status = BookingStatusEnum.Success };
+                    }
                 }
                 return new CheckStatusRes { Status = BookingStatusEnum.Pending };
             }
